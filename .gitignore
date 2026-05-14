@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.env
+bpc_env/
+**/wandb/*.wandb
+wandb/
+*.ckpt
+*.pt
+ipd/
+runs/
+.DS_Store

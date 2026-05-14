@@ -1,0 +1,25 @@
+# Core numeric / ML
+numpy==1.26.4
+numba==0.60.0
+numexpr==2.10.1
+opencv-python==4.10.0.84
+scipy==1.14.0
+lightning==2.4.0
+torchaudio==2.5.1
+torchsummary==1.5.1
+torchvision==0.20.1
+ultralytics==8.3.61
+
+# Visualization / augmentation
+matplotlib==3.10.0
+Pillow==10.2.0
+
+# Tools
+tqdm==4.67.1
+
+# 3D / geometry
+pyrender==0.1.45
+pyglet==2.1.1
+trimesh==4.5.3
+open3d==0.19.0
+
