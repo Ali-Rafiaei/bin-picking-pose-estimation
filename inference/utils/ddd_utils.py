@@ -13,13 +13,10 @@ def perform_icp(object_pc, mesh_points, estimated_pose):
     estimated_pc = o3d.geometry.PointCloud()
     estimated_pc.points = o3d.utility.Vector3dVector(transferred_mesh_points)
 
-    # setting the ICP parameters:
     euclidean_distance_bf_icp = np.mean(object_pc.compute_point_cloud_distance(estimated_pc))
     threshold = euclidean_distance_bf_icp
     global thresholds
     thresholds.append(threshold)
-    # print("threshold: ", threshold)
-    # threshold = 4
 
     estimation_method = o3d.pipelines.registration.TransformationEstimationPointToPoint()
     initial_transformation = estimated_pose
@@ -67,10 +64,6 @@ def refinement_by_rotation(object_points, initial_estimated_pose, mesh_points):
     initial_icp_mesh, transformation = perform_icp(object_pc, mesh_points, initial_estimated_pose)
     euclidean_distance_wout_refinement = np.mean(object_pc.compute_point_cloud_distance(initial_icp_mesh))
     thresholds.append(euclidean_distance_wout_refinement)
-    # initial_icp_mesh, transformation = perform_icp(object_pc, mesh_points, transformation)
-    # euclidean_distance_wout_refinement2 = np.mean(object_pc.compute_point_cloud_distance(initial_icp_mesh))
-    # print("euclidean_distance_wout_refinement: ", euclidean_distance_wout_refinement)
-    # print("euclidean_distance_wout_refinement2: ", euclidean_distance_wout_refinement2)
 
 
     R_x_180 = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
@@ -88,7 +81,6 @@ def refinement_by_rotation(object_points, initial_estimated_pose, mesh_points):
     errors = np.zeros(len(rotations))
     icp_transformations = np.zeros((len(rotations), 4, 4))
 
-    # for i in prange(len(rotations)):
     for i in range(len(rotations)):
         rotated_icp_transformation = np.eye(4)
         rotated_icp_transformation[0:3, 0:3] = np.dot(transformation[0:3, 0:3], rotations[i])
@@ -104,26 +96,11 @@ def refinement_by_rotation(object_points, initial_estimated_pose, mesh_points):
         icp_transformations[i] = second_transformation
 
     lowest_refinement_error_index = np.argmin(errors)
-    # print(errors)
 
     if errors[lowest_refinement_error_index] < euclidean_distance_wout_refinement:
-        # if lowest_refinement_error_index == 0:
-        #     print("Double ICP refinement")
-        # else:
-        #     if lowest_refinement_error_index < 4:
-        #         print(
-        #               f"180 degree rotation refinement along {['x', 'y', 'z'][lowest_refinement_error_index-1]} axis applied")
-        #     elif lowest_refinement_error_index < 7:
-        #         print(
-        #             f"+90 degree rotation refinement along {['x', 'y', 'z'][lowest_refinement_error_index-4]} axis applied")
-        #     else:
-        #         print(
-        #             f"-90 degree rotation refinement along {['x', 'y', 'z'][lowest_refinement_error_index-7]} axis applied")
-
         best_transformation = icp_transformations[lowest_refinement_error_index]
         final_error = errors[lowest_refinement_error_index]
     else:
-        # print("No refinement needed")
         best_transformation = transformation
         final_error = euclidean_distance_wout_refinement
 

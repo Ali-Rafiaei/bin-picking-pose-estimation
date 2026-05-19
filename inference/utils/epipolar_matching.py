@@ -8,8 +8,6 @@ def multi_view_match(segmentation_boxes, segmentation_masks, Ks, RTs):
     Use epipolar geometry to match detections from multiple cameras.
     Returns a list of PosePrediction instances.
     """
-    predictions = []
-
     K1, K2, K3 = Ks
     R1, R2, R3 = [x[:3, :3] for x in RTs]
     t1, t2, t3 = [x[:3, 3] for x in RTs]
@@ -19,22 +17,9 @@ def multi_view_match(segmentation_boxes, segmentation_masks, Ks, RTs):
 
     cost_matrix = compute_cost_matrix(segmentation_boxes["cam1"], segmentation_boxes["cam2"], segmentation_boxes["cam3"], F12, F13, F23)
 
-    # Hungarian matching + threshold
-    matches = match_objects(cost_matrix, threshold=30)
+    matches = match_objects(cost_matrix, threshold=30)  # 30px epipolar error cutoff
     matches_sorted = sorted(matches, key=lambda t: cost_matrix[t[0], t[1], t[2]])
 
-    cam1_dets, cam2_dets, cam3_dets = [], [], []
-    cam1_boxes, cam2_boxes, cam3_boxes = [], [], []
-    # for i, j, k in matches_sorted:
-    #     cam1_dets.append(segmentation_masks["cam1"][i])
-    #     # cam1_boxes.append(segmentation_boxes["cam1"][i])
-    #     # cam2_dets.append(segmentation_masks["cam2"][j])
-    #     # cam2_boxes.append(segmentation_boxes["cam2"][j])
-    #     # cam3_dets.append(segmentation_masks["cam3"][k])
-    #     # cam3_boxes.append(segmentation_boxes["cam3"][k])
-    #
-    # # return cam1_dets, cam2_dets, cam3_dets
-    # return cam1_dets
     return matches_sorted
 
 def multi_view_match_two_cams(segmentation_boxes, segmentation_masks, Ks, RTs):
@@ -42,8 +27,6 @@ def multi_view_match_two_cams(segmentation_boxes, segmentation_masks, Ks, RTs):
     Use epipolar geometry to match detections from multiple cameras.
     Returns a list of PosePrediction instances.
     """
-    predictions = []
-
     K1, K2 = Ks
     R1, R2 = [x[:3, :3] for x in RTs]
     t1, t2 = [x[:3, 3] for x in RTs]
@@ -51,8 +34,7 @@ def multi_view_match_two_cams(segmentation_boxes, segmentation_masks, Ks, RTs):
 
     cost_matrix = compute_cost_matrix_two_cams(segmentation_boxes["cam1"], segmentation_boxes["cam2"], F12)
 
-    # Hungarian matching + threshold
-    matches = match_objects_two_cams(cost_matrix, threshold=30)
+    matches = match_objects_two_cams(cost_matrix, threshold=30)  # 30px epipolar error cutoff
     matches_sorted = sorted(matches, key=lambda t: cost_matrix[t[0], t[1]])
 
     cam1_dets, cam2_dets = [], []

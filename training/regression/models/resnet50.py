@@ -17,7 +17,6 @@ class RadialDistanceModel(nn.Module):
 
 
     def forward(self, x):
-        # Converting the batch to pytorch tensor
         im_size = x.size()
         x = self.resnet50(x)
         x = self.regressor(x)
@@ -33,14 +32,3 @@ if __name__ == "__main__":
     tmp_x = model.resnet50(x)
     print(model)
     print(tmp_x.shape)
-    exit()
-    torch.cuda.reset_peak_memory_stats()
-    output = model(x)
-
-    vram_allocated = torch.cuda.memory_allocated() / (1024 ** 2)
-    vram_reserved = torch.cuda.memory_reserved() / (1024 ** 2)
-    vram_peak = torch.cuda.max_memory_allocated() / (1024 ** 2)
-
-    print(f"Allocated: {vram_allocated:.2f} MB")
-    print(f"Reserved: {vram_reserved:.2f} MB")
-    print(f"Peak Allocated: {vram_peak:.2f} MB")

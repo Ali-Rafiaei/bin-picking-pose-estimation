@@ -14,7 +14,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--train_pbr_path",
                         type=str,
-                        default='/media/ali/SecondSSD/MyResearch/Datasets/BOP/IPD/ipd/train_pbr')
+                        default=None)
 
     parser.add_argument("--batch_size",
                         type=int,
@@ -88,34 +88,13 @@ if __name__ == "__main__":
     wandb_logger.watch(model)
 
 
-    # wandb_logger.experiment.config.update(args)
-
-    # # Logging the SLURM configuration:
-    # wandb_logger.experiment.config.update({"Slurm Configuration": {
-    #     "JOB_ID": os.getenv("SLURM_JOB_ID"),
-    #     "JOB_NAME": os.getenv("SLURM_JOB_NAME"),
-    #     "JOB_NODELIST": os.getenv("SLURM_JOB_NODELIST"),
-    #     "JOB_GPUS": os.getenv("SLURM_JOB_GPUS"),
-    #     "TASKS_PER_NODE": os.getenv("SLURM_TASKS_PER_NODE")
-    # }
-    # })
-
-
-    gpu_devices = [int(device) for device in args.gpu_devices.split(",")]
     gpu_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "")
     gpu_devices = [int(device) for device in gpu_devices.split(",") if device.isdigit()]
     number_of_gpus = len(gpu_devices)
 
     trainer = Trainer(max_epochs=args.max_epochs,
-                      # devices=2,
                       accelerator='gpu', check_val_every_n_epoch=1,
-                      # accumulate_grad_batches=args.gradient_accumulation_value,
-                      # precision=args.precision,
-                      # strategy='ddp',
                       log_every_n_steps=16,
                       callbacks=[checkpoint_callback, checkpoint_callback_on_train_loss], logger=wandb_logger)
 
     trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=val_loader)
-
-    # trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=val_loader,
-    #             ckpt_path="")

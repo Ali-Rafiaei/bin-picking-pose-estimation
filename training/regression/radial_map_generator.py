@@ -16,7 +16,6 @@ def project(xyz, K, RT):
     K: [3, 3]
     RT: [3, 4]
     """
-    # pointc->actual scene
     xyz = np.dot(xyz, RT[:, :3].T) + RT[:, 3:].T
     actual_xyz = xyz
 
@@ -29,8 +28,6 @@ def project(xyz, K, RT):
 def rgbd_to_point_cloud(K, depth, rgb=None):
     vs, us = depth.nonzero()
     zs = depth[vs, us]
-    # print(zs.min())
-    # print(zs.max())
     xs = ((us - K[0, 2]) * zs) / float(K[0, 0])
     ys = ((vs - K[1, 2]) * zs) / float(K[1, 1])
     pts = np.array([xs, ys, zs]).T
@@ -59,13 +56,9 @@ def fast_for(pixel_coor, xy, actual_xyz, distance_list, Radius3DMap):
         z_min = 99999999999999999
         for xy_single in xy:
             if (coor[0] == xy_single[1] and coor[1] == xy_single[0]):
-                # print(coor)
-                # print(xy_single)
-                # print(actual_xyz[iter_count,2])
                 if (actual_xyz[iter_count, 2] < z_min):
                     z_loc = iter_count
                     z_min = actual_xyz[iter_count, 2]
-                    # Radius3DMap[xy[z_loc][1],xy[z_loc][0]]=distance_list[z_loc]
             iter_count += 1
 
         if (z_min <= z_mean):
@@ -90,10 +83,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    # Parameters to set
-    parser.add_argument('--dataset_dir',
-                        type=str,
-                        default='/media/ali/SecondSSD/MyResearch/data_generation/new_data_generation_pipeline/output/bin_picking_final')
+    parser.add_argument('--dataset_dir', type=str, default=None)
 
     parser.add_argument('--visualize',
                         type=bool,
@@ -107,16 +97,13 @@ if __name__ == '__main__':
 
     no_kpts_per_obj = 4
 
-    # Using KeyGNet keypoints:
     key_g_net_point = np.load(os.path.join(args.dataset_dir, 'KeyGNet_kpts.npy'))[:no_kpts_per_obj]
-    # converting to millimeters:
     key_g_net_point = key_g_net_point[:4]
 
     cycles_path = os.path.join(args.dataset_dir, 'train_pbr')
     cycles_list = sorted(os.listdir(cycles_path), key=lambda x: int(x))
     for cycle in tqdm(cycles_list):
 
-        print("Processing Cycle: ", int(cycle))
 
         os.makedirs(os.path.join(args.output_dir, cycle, "gt_uint16"), exist_ok=True)
 
@@ -133,8 +120,6 @@ if __name__ == '__main__':
         sorted_data = sorted(os.listdir(rgb_path), key=lambda x: int(x.split('.')[0]))
 
         for scene in tqdm(sorted_data):
-            print("Processing Scene: ", scene)
-
             scene_id = int(scene.split('.')[0])
 
             rgb = np.asarray(Image.open(os.path.join(rgb_path, scene)))
@@ -167,7 +152,6 @@ if __name__ == '__main__':
             obj_id = scene_annots["obj_id"]
 
 
-            # mesh = o3d.io.read_point_cloud(os.path.join(args.dataset_dir, "BW_interested_cad.ply"))
             mesh = o3d.io.read_triangle_mesh(os.path.join(args.dataset_dir, "BW_interested_cad.ply"))
             mesh_pointcloud = mesh.sample_points_uniformly(number_of_points=5000)
             mesh_points = np.asarray(mesh_pointcloud.points)
@@ -185,29 +169,6 @@ if __name__ == '__main__':
             vs, us = mask_visib.nonzero()
             masked_depth = np.multiply(depth, mask_visib)
 
-            # xyz, vs, us = rgbd_to_point_cloud(cam_k, masked_depth)
-            # object_pc = o3d.geometry.PointCloud()
-            # object_pc.points = o3d.utility.Vector3dVector(xyz)
-            # object_pc.paint_uniform_color(np.array([255, 0, 0]) / 255.0)
-            #
-            #
-            # filtered_points_idx = object_pc.remove_radius_outlier(5, 8)[1]
-            # if len(filtered_points_idx) == 0:
-            #     xyz_filtered = xyz
-            # else:
-            #     xyz_filtered = xyz[filtered_points_idx]
-            # object_pc.points = o3d.utility.Vector3dVector(xyz_filtered)
-            # object_pc.paint_uniform_color(np.array([0, 255, 0]) / 255.0)
-            #
-            # Experimental; trying to filter depth values that are too far from the object:
-            # max_depth = np.max(xyz_filtered[:, 2])
-            # filtered_depth = np.where(masked_depth <= max_depth, masked_depth, 0)
-            # xyz_test, vs_test, us_test = rgbd_to_point_cloud(cam_k, filtered_depth)
-            # test_object_pc = o3d.geometry.PointCloud()
-            # test_object_pc.points = o3d.utility.Vector3dVector(xyz_test)
-            # test_object_pc.paint_uniform_color(np.array([255, 0, 0]) / 255.0)
-            #
-
             radii_maps = np.zeros((transferred_mesh_points.shape[0], no_kpts_per_obj))
 
             for j in range(no_kpts_per_obj):
@@ -215,42 +176,25 @@ if __name__ == '__main__':
                                   (transferred_mesh_points[:, 1] - transferred_kpts[j, 1]) ** 2 +
                                   (transferred_mesh_points[:, 2] - transferred_kpts[j, 2]) ** 2) ** 0.5)
                 radii_maps[:, j] = distance_list
-                # radii_maps[:, :, j] = fast_for_map(vs, us, transferred_mesh_points, distance_list, radii_maps[:, :, j])
 
 
-            # Visualizing everything to make sure everything is correct before calculating the distance:
             if args.visualize:
                 scene_pc = o3d.geometry.PointCloud()
                 scene_pc.points = o3d.utility.Vector3dVector(scene_xyz)
 
-                # # Point clouds of the segmented depth image using mask
-                # object_pc = o3d.geometry.PointCloud()
-                # object_pc.points = o3d.utility.Vector3dVector(xyz)
-                # object_pc.paint_uniform_color(np.array([255, 0, 0]) / 255.0)
-
-                # Mesh transferred using the ground truth pose
                 transferred_mesh = o3d.geometry.PointCloud()
                 transferred_mesh.points = o3d.utility.Vector3dVector(transferred_mesh_points)
                 transferred_mesh.paint_uniform_color(np.array([160, 0, 160]) / 255.0)
 
-                # all keypoints of the object, transferred
                 all_kepoints_pc = o3d.geometry.PointCloud()
                 all_kepoints_pc.points = o3d.utility.Vector3dVector(np.array(transferred_kpts))
                 all_kepoints_pc.paint_uniform_color(np.array([0, 0, 1]))
 
-                # Visualizing the point clouds
-                o3d.visualization.draw_geometries(
-                    [scene_pc, all_kepoints_pc, transferred_mesh])
-                # o3d.visualization.draw_geometries(
-                #     [test_object_pc, all_kepoints_pc])
+                o3d.visualization.draw_geometries([scene_pc, all_kepoints_pc, transferred_mesh])
                 continue
-            # -------------------------------------------------------------
 
-            # Filtering the noise out further by considering the diameter of the bounding box as the threshold:
             max_value = np.max(radii_maps)
             normalized_radii_maps = radii_maps / max_value
-
-            # Quantizing the radii maps:
             quantized_radial_maps, scale = quantize_radii_maps(normalized_radii_maps)
 
             radii_maps_h5.create_dataset(f"{scene_id}/radial_maps", data=quantized_radial_maps, compression="gzip", compression_opts=9)

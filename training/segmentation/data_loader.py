@@ -14,24 +14,19 @@ from torchvision.transforms import v2
 
 
 class IpdDataset(Dataset):
-    def __init__(self, args, augment=None, mode="train"):
+    def __init__(self, args, training_first_half: bool = False, augment=None, mode="train"):
 
         self.augment = augment
+        self.training_first_half = training_first_half
         self.train_pbr_path = args.train_pbr_path
         self.num_scenes_from_each_camera = 100
         self.num_cameras = 3
 
-        # # If training on the first half of the dataset, uncomment the following line:
-        # cycle_list = np.arange(self.num_cycles)
-        # # If training on the second half of the dataset, uncomment the following line:
         cycle_list = np.arange(25, 50)
         camera_list = np.arange(self.num_cameras) + 1
         scene_list = np.arange(self.num_scenes_from_each_camera)
         self.cycle_camera_scene_combinations = np.array(np.meshgrid(cycle_list, scene_list, camera_list)).T.reshape(-1,
                                                                                                                     3)
-        # self.train_list = np.random.choice(self.cycle_camera_scene_combinations, len(self.cycle_camera_scene_combinations)*0.9, replace=False)
-        # self.val_list = np.array([x for x in self.cycle_camera_scene_combinations if x not in self.train_list])
-        # choosing the 90% of the data randomly for training and 10% for validation
         train_indices = np.random.choice(np.arange(len(self.cycle_camera_scene_combinations)),
                                          size=int(len(self.cycle_camera_scene_combinations) * 0.9), replace=False)
         self.train_list = self.cycle_camera_scene_combinations[train_indices]
@@ -73,9 +68,7 @@ class IpdDataset(Dataset):
             scene_gt = json.load(f)
 
         image = np.array(Image.open(os.path.join(cycle_path, f"rgb_cam{camera_id}/{scene_id}.jpg")))
-        # Normalize the image:
         image = image / 255.0
-        # Create the image tensor
         image = torch.tensor(image.transpose(2, 0, 1))
 
         masks = []
@@ -100,7 +93,6 @@ class IpdDataset(Dataset):
                 labels.append(self.obj_id_to_label(str(obj_id)))
 
         masks = np.array(masks)
-        # labels = np.ones((len(boxes),), dtype=np.int64)
 
         target = {
             "boxes": torch.from_numpy(np.array(boxes)).to(dtype=torch.float32),
@@ -109,7 +101,6 @@ class IpdDataset(Dataset):
         }
 
         if self.augment and np.random.rand() > 0.4:
-            # if True:
             image = self.augment_image(image, masks)
 
         image = image.to(dtype=torch.float32)
@@ -182,26 +173,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-
-    # Parameters to set
-    parser.add_argument("--train_pbr_path",
-                        type=str,
-                        default='/media/ali/SecondSSD/MyResearch/Datasets/BOP/IPD/ipd/train_pbr')
-    parser.add_argument("--batch_size",
-                        type=int,
-                        default=16)
-
+    parser.add_argument("--train_pbr_path", type=str, default=None)
+    parser.add_argument("--batch_size", type=int, default=16)
     args = parser.parse_args()
 
-    test_dataset = CustomDataset(args, augment=True, mode="train")
+    test_dataset = IpdDataset(args, augment=True, mode="train")
     test_dataset[0]
-    # test_dataset[0]
-    # exit()
-    # test_loader, _ = generate_loaders(args)
-
-    # loop_start_time = time()
-    # batch_start_time = time()
-    # for i, batch in enumerate(test_loader):
-    #     print("Batch Time: ", time() - batch_start_time)
-    #     batch_start_time = time()
-    #     print(f"Total Time after {i} iterations: {time() - loop_start_time}")

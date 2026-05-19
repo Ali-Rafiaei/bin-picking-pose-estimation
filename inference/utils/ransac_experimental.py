@@ -74,8 +74,7 @@ def select_best_vote(votes, all_inlier_indices):
     top_vote_indices = np.where(votes[:, 0] >= top_inlier_count * 0.9)[0]
 
     average_errors = votes[:, 4] / (votes[:, 0] + 1e-10)
-    sorted_indices = sorted(top_vote_indices, key=lambda i: average_errors[i])  # lowest error
-    # sorted_indices = sorted(top_vote_indices, key=lambda i: votes[i, 4])  # lowest error
+    sorted_indices = sorted(top_vote_indices, key=lambda i: average_errors[i])
 
     best_vote_idx = sorted_indices[0]
     best_vote = votes[best_vote_idx]
@@ -110,9 +109,7 @@ def accumulate_inliers(xyz, radial_list, center, epsilon, early_stop=None):
 
 def estimate_adaptive_epsilon(xyz, radial_list, center_estimate, percentile=90, min_eps=0.1, max_eps=2.0):
     errors = np.abs(np.linalg.norm(xyz - center_estimate, axis=1) - radial_list)
-    np.save("error.npy", errors)
     eps = np.percentile(errors, percentile)
-    print(f"Adaptive epsilon before clipping: {eps:.4f} mm")
     return np.clip(eps, min_eps, max_eps)
 
 def RANSAC_w_refinement(xyz, radial_list, err, iterations=5000, epsilon=0.5, num_inliers_for_refinement=150):
@@ -142,8 +139,7 @@ def RANSAC_w_refinement_adaptive(xyz, radial_list, iterations=5000, initial_epsi
     center_from_vote = np.array([best_vote[1], best_vote[2], best_vote[3]])
 
     # adaptive_epsilon = estimate_adaptive_epsilon(xyz, radial_list, center_from_vote)
-    adaptive_epsilon = 0.5
-    # print(f"Adaptively estimated epsilon: {adaptive_epsilon:.4f} mm")
+    adaptive_epsilon = 0.5  # adaptive estimation disabled; fixed value performed better in competition
 
     refined_center = center_from_vote
     last_inlier_count = int(best_vote[0])

@@ -9,7 +9,13 @@ class ResNet50(nn.Module):
         self.resnet50 = nn.Sequential(*list(self.resnet50.children())[:-2])
 
         if input_include_depth:
-            self.resnet50.conv1.in_channels = 4
+            old_conv = self.resnet50[0]
+            new_conv = nn.Conv2d(4, old_conv.out_channels, kernel_size=old_conv.kernel_size,
+                                 stride=old_conv.stride, padding=old_conv.padding, bias=False)
+            with torch.no_grad():
+                new_conv.weight[:, :3] = old_conv.weight
+                new_conv.weight[:, 3:] = 0  # depth channel init to zero
+            self.resnet50[0] = new_conv
 
         self.regressor = nn.Sequential(
             nn.Conv2d(2048, 512, kernel_size=3, padding=1),
@@ -19,7 +25,6 @@ class ResNet50(nn.Module):
 
 
     def forward(self, x):
-        # Converting the batch to pytorch tensor
         im_size = x.size()
         x = self.resnet50(x)
         x = self.regressor(x)

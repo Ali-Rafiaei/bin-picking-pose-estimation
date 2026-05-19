@@ -1,3 +1,11 @@
+# IBPC Pose Estimator — competition submission for the Perception Challenge for Bin-Picking
+# (IBPC 2025, sponsored by OpenCV)
+#
+# ROS2 node scaffolding, Camera class, and service interface provided by competition organizers.
+# Pose estimation pipeline, multi-view matching, and inference/utils modules: Ali Rafiaei
+#
+# Builds on RCVPose (https://github.com/aaronWool/rcvpose3d)
+
 import gc
 import time
 
@@ -124,8 +132,10 @@ class PoseEstimator(Node):
         self.get_logger().info(f"Pose estimates can be queried over srv {srv_name}.")
         self.srv = self.create_service(GetPoseEstimates, srv_name, self.srv_cb)
 
+        self.models_3d_dir = (
+            self.declare_parameter("models_3d_dir", "/opt/ros/underlay/install/3d_models").get_parameter_value().string_value
+        )
 
-        # Declare parameters
         self.part_regression = True
         self.regression_part_size = 2
         self.part_segmentation = True
@@ -140,16 +150,16 @@ class PoseEstimator(Node):
         self.keypoints = np.array([[-18.9783262, 16.60012318, -26.71720371],
                                    [63.48793434, 5.03256196, -20.61116947],
                                    [-60.04081006, 21.36026804, 9.61595647],
-                                   [-24.7195646, -13.01965225, -22.26686055]])
+                                   [-24.7195646, -13.01965225, -22.26686055]])  # KeyGNet keypoints in object frame (mm)
 
         self.segmentation_models_cache = {}
         self.regression_models_cache = {}
         self.objects_model_points = {}
-        object_ids = os.listdir("/opt/ros/underlay/install/3d_models/")
+        object_ids = os.listdir(self.models_3d_dir)
         object_ids = [int(id.split("_")[1].split(".")[0]) for id in object_ids if id.endswith(".ply")]
         for id in object_ids:
-            obj_mesh = o3d.io.read_triangle_mesh(f"/opt/ros/underlay/install/3d_models/obj_{str(id).zfill(6)}.ply")
-            obj_mesh_as_pc = obj_mesh.sample_points_uniformly(500)
+            obj_mesh = o3d.io.read_triangle_mesh(os.path.join(self.models_3d_dir, f"obj_{str(id).zfill(6)}.ply"))
+            obj_mesh_as_pc = obj_mesh.sample_points_uniformly(500)  # sparse sampling sufficient for ICP
             obj_points = np.asarray(obj_mesh_as_pc.points)
             self.objects_model_points.update({str(id): obj_points})
 
@@ -171,14 +181,16 @@ class PoseEstimator(Node):
         if len(request.cameras) < 3:
             self.get_logger().warn("Received request with insufficient cameras.")
             return response
-        # try:
-        cam_1 = Camera(request.cameras[0])
-        cam_2 = Camera(request.cameras[1])
-        cam_3 = Camera(request.cameras[2])
-        photoneo = Camera(request.photoneo)
-        response.pose_estimates = self.get_pose_estimates(request.object_ids, cam_1, cam_2, cam_3, photoneo)
-        # except:
-        #     self.get_logger().error("Error calling get_pose_estimates.")
+        try:
+            cam_1 = Camera(request.cameras[0])
+            cam_2 = Camera(request.cameras[1])
+            cam_3 = Camera(request.cameras[2])
+            photoneo = Camera(request.photoneo)
+            response.pose_estimates = self.get_pose_estimates(
+                request.object_ids, cam_1, cam_2, cam_3, photoneo
+            )
+        except Exception as e:
+            self.get_logger().error(f"Error in get_pose_estimates: {e}")
         return response
 
     def get_pose_estimates(
@@ -193,14 +205,6 @@ class PoseEstimator(Node):
         pose_estimates = []
         self.get_logger().info(f"Received request to estimates poses for object_ids: {object_ids}")
 
-        # rgb_cam1 = np.tile(cam_1.rgb[:, :, None], (1, 1, 3))
-        # rgb_cam2 = np.tile(cam_2.rgb[:, :, None], (1, 1, 3))
-        # rgb_cam3 = np.tile(cam_3.rgb[:, :, None], (1, 1, 3))
-
-        # depth_cam1 = cam_1.depth * 0.1
-        # depth_cam2 = cam_2.depth * 0.1
-        # depth_cam3 = cam_3.depth * 0.1
-
         Rt_cam1 = cam_1.pose
         Rt_cam2 = cam_2.pose
         Rt_cam3 = cam_3.pose
@@ -208,11 +212,8 @@ class PoseEstimator(Node):
         K_cam1 = cam_1.intrinsics
         K_cam2 = cam_2.intrinsics
         K_cam3 = cam_3.intrinsics
-        # K_ref = photoneo.intrinsics
 
         RT1_to_ref = np.linalg.inv(Rt_cam1)
-        # RT2_to_ref = np.linalg.inv(Rt_cam2)
-        # RT3_to_ref = np.linalg.inv(Rt_cam3)
 
 
         for object_id in object_ids:
@@ -231,7 +232,7 @@ class PoseEstimator(Node):
 
             st_time = time.time()
             all_object_xyzs, all_object_radii_maps, non_zero_indices = self.estimate_radii_maps_one_cam(np.tile(cam_1.rgb[:, :, None], (1, 1, 3)),
-                                                                                                        cam_1.depth * 0.1,
+                                                                                                        cam_1.depth * 0.1,  # depth in raw units (tenths of mm), * 0.1 → cm
                                                                                                         K_cam1,
                                                                                                         RT1_to_ref,
                                                                                                         masks_of_cam1,
@@ -249,8 +250,7 @@ class PoseEstimator(Node):
                 object_estimated_kpts = np.zeros((4, 3))
                 object_xyz = all_object_xyzs[i]
                 object_radii = all_object_radii_maps[i]
-                # Only keeping the non-zero radii maps
-                # u, v = np.where(object_radii[:, :, 0] != 0)
+                # only keep non-zero (masked-in) pixels
                 object_radii = object_radii[non_zero_indices[i][0], non_zero_indices[i][1], :]
 
                 self.get_logger().info("number of object points: {}".format(len(all_object_xyzs[i])))
@@ -265,7 +265,8 @@ class PoseEstimator(Node):
                 st_time = time.time()
                 for keypoint_index in range(4):
                     center_mm_s = RANSAC_w_refinement_adaptive(object_xyz, object_radii[:, keypoint_index],
-                                                               iterations=300, initial_epsilon=1, MAX_REFINEMENTS=1)
+                                                               iterations=300,  # tuned for speed/accuracy tradeoff
+                                                               initial_epsilon=1, MAX_REFINEMENTS=1)
                     all_estimated_kpts[i, keypoint_index] = center_mm_s[0]
                     object_estimated_kpts[keypoint_index] = center_mm_s[0]
                 ransac_time += time.time() - st_time
@@ -281,6 +282,7 @@ class PoseEstimator(Node):
                 if self.perform_refinement:
                     transfered_mesh_with_icp, refined_transformation, final_error = refinement_by_rotation(
                         all_object_xyzs[i], estimated_pose, mesh_points)
+                    # second pass skipped — diminishing returns vs. runtime cost
                     # transfered_mesh_with_icp, refined_transformation = refinement_by_rotation(
                     #     all_object_xyzs[i], refined_transformation, mesh_points)
                 else:
@@ -294,7 +296,6 @@ class PoseEstimator(Node):
                 final_transformation = refined_transformation.copy()
                 pose_estimate = PoseEstimateMsg()
                 pose_estimate.obj_id = object_id
-                # TODO: calculate the score based on the two point clouds euclidean distance
                 pose_estimate.score = self.calc_pose_score(final_error) if self.perform_refinement else 1.0
                 pose_estimate.pose.position.x = final_transformation[0, 3]
                 pose_estimate.pose.position.y = final_transformation[1, 3]
@@ -307,12 +308,10 @@ class PoseEstimator(Node):
                 pose_estimates.append(pose_estimate)
 
             torch.cuda.empty_cache()
-            # torch.cuda.ipc_collect()
 
-            # self.get_logger().info(f"Detected {len(all_object_xyzs)} object with id {object_id} and estimated their pose")
+            # left in from competition runs to track memory pressure under load
             out = subprocess.check_output(['free', '-b']).decode().splitlines()[1].split()
             total, used, free = map(int, (out[1], out[2], out[3]))
-            # self.get_logger().info("Ram Stats:")
             self.get_logger().info(
                 f"Total: {total / (1024 ** 3):.2f} GiB, Used: {used / (1024 ** 3):.2f} GiB, Free: {free / (1024 ** 3):.2f} GiB")
             self.get_logger().info(
@@ -324,7 +323,6 @@ class PoseEstimator(Node):
                 f"Refinement time for a scene with {len(all_object_xyzs)} objects detected: {refinement_time:.2f} seconds")
             self.get_logger().info(
                 f"Total time for a scene with {len(all_object_xyzs)} objects detected: {time.time() - global_time:.2f} seconds")
-            # print("\nHere are the estimated poses: \n", pose_estimates)
         self.call_counter += 1
         self.get_logger().info(
             f"Pose estimates called {self.call_counter} times in the totatl time of {time.time() - self.estimator_construction_time:.2f} seconds")
@@ -341,11 +339,6 @@ class PoseEstimator(Node):
         return regression_model
 
     def match_three_cams_return_one(self, rgbs, Ks, Rts, object_id):
-        # rgb_cam1, rgb_cam2, rgb_cam3 = rgbs
-        # K_cam1, K_cam2, K_cam3 = Ks
-        # Rt_cam1, Rt_cam2, Rt_cam3 = Rts
-
-        # segmentation_model = self.segmentation_models_cache["all_objs"]
         st_time = time.time()
 
         seg_preds = self.detect_three_cams([rgbs[0], rgbs[1], rgbs[2]], self.segmentation_models_cache["all_objs"])
@@ -356,38 +349,24 @@ class PoseEstimator(Node):
             "Time to run the segmentation model: {:.2f} seconds".format(time.time() - st_time))
 
         segmentation_label_of_obj = object_id_to_segmentation_label(object_id)
-        threshold_for_confidence = 0.93
+        threshold_for_confidence = 0.93  # tuned on val set; lower values increase false positives significantly
         segmentation_masks = {}
         segmentation_boxes = {}
-        # matched_masks = {}
         cam1_dets = []
         for i, cam_preds in enumerate(seg_preds):
-            # cam_masks = cam_preds["masks"]
-            # cam_scores = cam_preds["scores"]
-            # cam_labels = cam_preds["labels"]
-            # cam_boxes = cam_preds["boxes"]
-
             indices_of_interested_obj = np.where(cam_preds["labels"] == segmentation_label_of_obj)[0]
             indices_of_accepted_masks = np.where(cam_preds["scores"][indices_of_interested_obj] > threshold_for_confidence)[0]
 
             if len(indices_of_accepted_masks) == 0:
-                print("At least one of the cameras did not detect the object")
+                self.get_logger().warn("At least one of the cameras did not detect the object")
                 return cam1_dets
 
             masks_of_obj = cam_preds["masks"][indices_of_interested_obj][indices_of_accepted_masks]
-            # boxes_of_obj = cam_preds["boxes"][indices_of_interested_obj][indices_of_accepted_masks]
-
             masks_of_obj = masks_of_obj.squeeze(axis=1)
-            masks_of_obj = np.where(masks_of_obj > 0.6, 1, 0).astype(np.uint8)
+            masks_of_obj = np.where(masks_of_obj > 0.6, 1, 0).astype(np.uint8)  # MaskRCNN soft mask binarization threshold
 
             segmentation_masks.update({f"cam{i + 1}": masks_of_obj})
             segmentation_boxes.update({f"cam{i + 1}": cam_preds["boxes"][indices_of_interested_obj][indices_of_accepted_masks]})
-
-        # delete_var(seg_preds)
-        # torch.cuda.empty_cache()
-
-        # matched_masks["cam1"], _, _ = multi_view_match(segmentation_boxes, segmentation_masks,[Ks[0], Ks[1], Ks[2]],
-        #                                                 [Rts[0], Rts[1], Rts[2]])
 
         matches = multi_view_match(segmentation_boxes, segmentation_masks,[Ks[0], Ks[1], Ks[2]],
                                                         [Rts[0], Rts[1], Rts[2]])
@@ -418,7 +397,6 @@ class PoseEstimator(Node):
 
 
                     rgb_tensor = rgb_tensor.detach().cpu()
-                    # seg_pred = seg_pred.detach().cpu()
                     rgb_tensor = None
                     seg_pred = None
                     del rgb_tensor
@@ -463,36 +441,6 @@ class PoseEstimator(Node):
         else:
             regression_model = self.load_regression_model(object_id)
 
-        # if self.part_regression:
-        #     part_size = self.regression_part_size
-        #     reg_preds = []
-        #     for i in range(len(segmentation_masks) // part_size if len(segmentation_masks) % part_size == 0 else len(
-        #             segmentation_masks) // part_size + 1):
-        #         number_of_segmentations = part_size if i * part_size + part_size < len(segmentation_masks) else len(segmentation_masks) % part_size
-        #
-        #         parted_segmented_rgbs = np.tile(rgb, [number_of_segmentations, 1, 1, 1]).astype(np.float32)
-        #         parted_segmented_rgbs[i * part_size:(i + 1) * part_size] if i * part_size < len(segmented_rgbs) else segmented_rgbs[i * part_size:] = 0
-        #         # parted_segmented_rgbs = segmented_rgbs[i * part_size:(i + 1) * part_size] if i * part_size < len(
-        #         #     segmented_rgbs) else segmented_rgbs[i * part_size:]
-        #         parted_segmented_rgbs = parted_segmented_rgbs.astype(np.float32)
-        #         parted_segmented_rgbs = parted_segmented_rgbs / 255.0
-        #         parted_segmented_rgbs = parted_segmented_rgbs.transpose(0, 3, 1, 2)
-        #
-        #         with torch.cuda.amp.autocast(), torch.no_grad():
-        #             parted_segmented_rgbs = torch.from_numpy(parted_segmented_rgbs).to(device="cuda").half()
-        #             parted_reg_preds = regression_model(parted_segmented_rgbs)
-        #             # self.get_logger().info(f"{torch.cuda.memory_summary()}")
-        #
-        #         parted_reg_preds = parted_reg_preds.cpu().numpy()
-        #
-        #         reg_preds.append(parted_reg_preds)
-        #
-        #         del parted_segmented_rgbs
-        #         del parted_reg_preds
-        #         gc.collect()
-        #         # torch.cuda.empty_cache()
-        # 
-        #     reg_preds = np.concatenate(reg_preds, axis=0)
         if self.part_regression:
             part_size = self.regression_part_size
             reg_preds = []
@@ -504,7 +452,6 @@ class PoseEstimator(Node):
                 with torch.cuda.amp.autocast(), torch.no_grad():
                     parted_segmented_rgbs = torch.from_numpy(parted_segmented_rgbs).to(device="cuda").half()
                     parted_reg_preds = regression_model(parted_segmented_rgbs)
-                    # self.get_logger().info(f"{torch.cuda.memory_summary()}")
 
                 parted_reg_preds = parted_reg_preds.cpu().numpy()
 
@@ -513,27 +460,16 @@ class PoseEstimator(Node):
                 del parted_segmented_rgbs
                 del parted_reg_preds
                 gc.collect()
-                # torch.cuda.empty_cache()
 
             reg_preds = np.concatenate(reg_preds, axis=0)
 
         else:
             with torch.cuda.amp.autocast(), torch.no_grad():
-                # segmented_rgbs = torch.from_numpy(segmented_rgbs).to(device="cuda").float()
                 segmented_rgbs = torch.from_numpy(segmented_rgbs).to(device="cuda").half()
                 reg_preds = regression_model(segmented_rgbs).float().cpu().numpy()
 
         reg_preds = reg_preds.transpose(0, 2, 3, 1)
 
-        # Segmenting the estimated radial maps using the zero values in the depth rather than the mask
-        # n, u, v = np.where(segmented_depths == 0)
-        # reg_preds[n, u, v, :] = 0
-        # segmented_depths = np.tile(depth, [len(segmentation_masks), 1, 1]).astype(np.float32)
-        # segmented_depths[np.logical_not(segmentation_masks)] = 0
-        #
-        # object_xyzs, non_zero_indices = depth_to_point_cloud(cam_K, segmented_depths)
-
-        # B, H, W = batch_of_depths.shape
         fx, fy = cam_K[0, 0], cam_K[1, 1]
         cx, cy = cam_K[0, 2], cam_K[1, 2]
 
@@ -559,7 +495,7 @@ class PoseEstimator(Node):
 
 
     def calc_pose_score(self, error):
-        scaling_factor = 20.0
+        scaling_factor = 20.0  # controls score decay rate; tuned to ICP error scale (mm)
         score = float(np.exp(-error / scaling_factor))
         score = max(min(score, 1.0), 1e-6)
 

@@ -20,7 +20,6 @@ class MaskRCNNTrainer(L.LightningModule):
         losses = self.model(images, targets)
         total_loss = sum(losses.values())
 
-        # Log individual losses
         for k, v in losses.items():
             self.log(f"train_{k}", v, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True,
                      batch_size=self.args.batch_size)
@@ -32,14 +31,12 @@ class MaskRCNNTrainer(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         images, targets = batch
 
-        # forward pass but with no gradient calculation
         self.model.train()
         with torch.no_grad():
             losses = self.model(images, targets)
 
         total_loss = sum(losses.values())
 
-        # Log individual losses
         for k, v in losses.items():
             self.log(f"val_{k}", v, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True,
                      batch_size=self.args.batch_size)

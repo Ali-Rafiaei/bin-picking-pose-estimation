@@ -72,7 +72,8 @@ class HornPoseFitting:
                 z[ip]=0.0
 
 
-    def lmshorn(self,P1, P2,n, A):
+    def lmshorn(self, P1, P2, n, A):
+        """Compute rigid body alignment from two sets of corresponding 3D points using Horn's quaternion method."""
         C1=np.zeros((3))
         C2=np.zeros((3))
         Sxx=0.0
