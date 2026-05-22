@@ -139,6 +139,6 @@ adaptive RANSAC improvements, and ROS2 integration.
 
 | | Result |
 |---|---|
-| Overall rank | 12th / mixed leaderboard (one-shot + trained methods) |
+| Overall rank | 12th / mixed leaderboard (zero-shot + trained methods) |
 | Rank among trained methods | 8th |
 | Competition | IBPC 2025 — Perception Challenge for Bin-Picking (OpenCV) |
